@@ -41,7 +41,7 @@
           :document-scroll {:x nil :y nil}
           :viewport {:width nil :height nil}
           }
-    :env {:mouse-pos {:x nil :y nil}
+    :env {:mouse nil
           :time nil
           }
     :gui {:click-count 0
@@ -108,14 +108,14 @@
 (defonce rc-dom-viewport-w
   (cc-dom [:viewport :width]))
 
-(defonce rc-env-mouse-pos
-  (cc-env [:mouse-pos]))
+(defonce rc-env-mouse
+  (cc-env [:mouse]))
 
-(defonce rc-env-mouse-pos-x
-  (cc-env [:mouse-pos :x]))
+;; (defonce rc-env-mouse-pos-x
+;;   (cc-env [:mouse-pos :x]))
 
-(defonce rc-env-mouse-pos-y
-  (cc-env [:mouse-pos :y]))
+;; (defonce rc-env-mouse-pos-y
+;;   (cc-env [:mouse-pos :y]))
 
 (defonce rc-env-time
   (cc-env [:time]))
@@ -137,8 +137,8 @@
 (defn mutate-env-time! []
   (reset! rc-env-time (poly/js-now)))
 
-(defn mutate-env-mouse-pos! [x y]
-  (assoc! rc-env-mouse-pos :x x :y y))
+(defn mutate-env-mouse! [mouse]
+  (reset! rc-env-mouse mouse))
 
 (defn mutate-gui-click-count! []
   (reset! rc-gui-click-count))
@@ -149,8 +149,10 @@
 
 (defonce setup-channels!
   (do
-    (reset! rc-cha-dom-viewport-resize (poly/channel-for-viewport-resize!))
-    (reset! rc-cha-env-mouse-move      (poly/channel-for-mouse-move!))
+    (reset! rc-cha-dom-viewport-resize
+            (poly/channel-for-viewport-resize!))
+    (reset! rc-cha-env-mouse-move
+            (poly/channel-for-mouse-move! js/window))
     true))
 
 
@@ -163,8 +165,8 @@
 (defn on-dom-window-load [e]
   (mutate-dom-viewport-size! (poly/get-viewport-width) (poly/get-viewport-height)))
 
-(defn on-env-mouse-move [{:keys [x y]}]
-  (mutate-env-mouse-pos! x y))
+(defn on-env-mouse-move [mouse]
+  (mutate-env-mouse! mouse))
 
 (defn on-env-time-interval []
   (mutate-env-time!))
@@ -309,7 +311,8 @@
     [:p "Viewport size " rc-dom-viewport-w "px by " rc-dom-viewport-h "px"]
     [:p "Document height " rc-dom-document-h "px"]
 ;    [:p "Document scroll " rc-dom-document-scroll-x " by " rc-dom-document-scroll-y]
-    [:p "Mouse position " "(" rc-env-mouse-pos-x ", " rc-env-mouse-pos-y ")"]
+;    [:p "Mouse position " "(" rc-env-mouse-pos-x ", " rc-env-mouse-pos-y ")"]
+    [:p "Mouse " (rx (str @rc-env-mouse))]
     [:p "Frames/second (60 max) " rdom/fps]
     [:p "Button Clicks " rc-gui-click-count " "
      [:button {:on-click on-gui-button-click} "Click Me!"]]

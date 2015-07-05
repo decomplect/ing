@@ -7,6 +7,7 @@
     [adzerk/boot-reload         "0.3.1"           :scope "test"]
     [boot-cljs-test/node-runner "0.1.0"           :scope "test"]
     [pandeiro/boot-http         "0.6.3-SNAPSHOT"  :scope "test"]
+    [org.clojure/clojure "1.7.0"]
     [org.clojure/clojurescript "0.0-3308"]
     [org.clojure/core.async "0.1.346.0-17112a-alpha"]
     [freactive "0.2.0-SNAPSHOT"]
