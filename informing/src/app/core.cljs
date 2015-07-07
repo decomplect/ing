@@ -57,13 +57,27 @@
 
 
 ;; -----------------------------------------------------------------------------
+;; Channels
+
+(defn get-channel [k]
+  (get-in @omni-state [:cha k]))
+
+(defn swap-channel! [k cha]
+  (swap! omni-state assoc-in [:cha k] cha))
+
+(defonce setup-channels!
+  (do
+    (swap-channel! :dom-viewport-resize (poly/channel-for-viewport-resize!))
+    (swap-channel! :env-mouse-move (poly/channel-for-mouse-move! js/window))
+    true))
+
+
+;; -----------------------------------------------------------------------------
 ;; Cursor Creators (Omni's little helpers)
 
 (def cc (partial r/cursor omni-state))
 
 (defonce cc-app (partial r/cursor (cc :app)))
-
-(defonce cc-cha (partial r/cursor (cc :cha)))
 
 (defonce cc-dom (partial r/cursor (cc :dom)))
 
@@ -80,18 +94,6 @@
 
 (defonce rc-app-version
   (cc-app [:version]))
-
-(defonce rc-cha-dom-viewport-resize
-  (cc-cha [:dom-viewport-resize]))
-
-(defonce rc-cha-env-mouse-down
-  (cc-cha [:env-mouse-down]))
-
-(defonce rc-cha-env-mouse-move
-  (cc-cha [:env-mouse-move]))
-
-(defonce rc-cha-env-mouse-up
-  (cc-cha [:env-mouse-up]))
 
 (defonce rc-dom-document-h
   (cc-dom [:document-height]))
@@ -145,18 +147,6 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; Channels
-
-(defonce setup-channels!
-  (do
-    (reset! rc-cha-dom-viewport-resize
-            (poly/channel-for-viewport-resize!))
-    (reset! rc-cha-env-mouse-move
-            (poly/channel-for-mouse-move! js/window))
-    true))
-
-
-;; -----------------------------------------------------------------------------
 ;; Event Handlers (On and on and on, over and over again...)
 
 (defn on-dom-viewport-resize [{:keys [width height]}]
@@ -182,13 +172,13 @@
   (poly/listen-for-viewport-resize! on-dom-viewport-resize))
 
 (defonce listen-for-dom-viewport-resize!
-  (poly/listen-take! @rc-cha-dom-viewport-resize on-dom-viewport-resize))
+  (poly/listen-take! (get-channel :dom-viewport-resize) on-dom-viewport-resize))
 
 (defonce listen-for-dom-window-load!
   (poly/listen! js/window "load" on-dom-window-load))
 
 (defonce listen-for-env-mouse-move!
-  (poly/listen-take! @rc-cha-env-mouse-move on-env-mouse-move))
+  (poly/listen-take! (get-channel :env-mouse-move) on-env-mouse-move))
 
 
 ;; -----------------------------------------------------------------------------
