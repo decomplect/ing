@@ -32,14 +32,14 @@
    {:app {:name "Informing"
           :version "0.1.0"
           }
-    :cha {:dom-viewport-resize nil
-          :env-mouse-down nil
-          :env-mouse-move nil
-          :env-mouse-up nil
-          }
     :dom {:document-height nil
           :document-scroll {:x nil :y nil}
           :viewport {:width nil :height nil}
+          }
+    :ech {:dom-viewport-resize nil
+          :env-mouse-down nil
+          :env-mouse-move nil
+          :env-mouse-up nil
           }
     :env {:mouse nil
           :time nil
@@ -57,18 +57,24 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; Channels
+;; Event Channels
 
-(defn get-channel [k]
-  (get-in @omni-state [:cha k]))
+(defn get-event-channel [k]
+  (get-in @omni-state [:ech k :channel]))
 
-(defn swap-channel! [k cha]
-  (swap! omni-state assoc-in [:cha k] cha))
+(defn get-event-listener-key [k]
+  (get-in @omni-state [:ech k :listener-key]))
 
-(defonce setup-channels!
+(defn swap-event-channel! [k [channel listener-key]]
+  (swap! omni-state assoc-in [:ech k :channel] channel)
+  (swap! omni-state assoc-in [:ech k :listener-key] listener-key))
+
+(defonce setup-event-channels!
   (do
-    (swap-channel! :dom-viewport-resize (poly/channel-for-viewport-resize!))
-    (swap-channel! :env-mouse-move (poly/channel-for-mouse-move! js/window))
+    (swap-event-channel! :dom-viewport-resize
+                         (poly/channel-for-viewport-resize!))
+    (swap-event-channel! :env-mouse-move
+                         (poly/channel-for-mouse-move! js/window))
     true))
 
 
@@ -172,13 +178,13 @@
   (poly/listen-for-viewport-resize! on-dom-viewport-resize))
 
 (defonce listen-for-dom-viewport-resize!
-  (poly/listen-take! (get-channel :dom-viewport-resize) on-dom-viewport-resize))
+  (poly/listen-take! (get-event-channel :dom-viewport-resize) on-dom-viewport-resize))
 
 (defonce listen-for-dom-window-load!
   (poly/listen! js/window "load" on-dom-window-load))
 
 (defonce listen-for-env-mouse-move!
-  (poly/listen-take! (get-channel :env-mouse-move) on-env-mouse-move))
+  (poly/listen-take! (get-event-channel :env-mouse-move) on-env-mouse-move))
 
 
 ;; -----------------------------------------------------------------------------
@@ -302,7 +308,7 @@
     [:p "Document height " rc-dom-document-h "px"]
 ;    [:p "Document scroll " rc-dom-document-scroll-x " by " rc-dom-document-scroll-y]
 ;    [:p "Mouse position " "(" rc-env-mouse-pos-x ", " rc-env-mouse-pos-y ")"]
-    [:p "Mouse " (rx (str @rc-env-mouse))]
+    [:p "Mouse " (rx (str (into (sorted-map) @rc-env-mouse)))]
     [:p "Frames/second (60 max) " rdom/fps]
     [:p "Button Clicks " rc-gui-click-count " "
      [:button {:on-click on-gui-button-click} "Click Me!"]]
