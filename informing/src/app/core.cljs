@@ -66,8 +66,8 @@
   (get-in @omni-state [:ech k :listener-key]))
 
 (defn swap-event-channel! [k [channel listener-key]]
-  (swap! omni-state assoc-in [:ech k :channel] channel)
-  (swap! omni-state assoc-in [:ech k :listener-key] listener-key))
+  (swap! omni-state assoc-in [:ech k]
+         {:channel channel :listener-key listener-key}))
 
 (defonce setup-event-channels!
   (do
