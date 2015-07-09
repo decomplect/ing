@@ -31,6 +31,7 @@
   (comp (cljs :optimizations :advanced)))
 
 (deftask dev []
+  (set-env! :source-paths #{"src" "../../ion/src"})
   (task-options!
     checkout {:dependencies '[[ion/cuss "0.1.0-SNAPSHOT"]
                               [ion/poly "0.1.0-SNAPSHOT"]]}
