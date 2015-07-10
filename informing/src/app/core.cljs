@@ -41,7 +41,9 @@
           :env-mouse-move nil
           :env-mouse-up nil
           }
-    :env {:mouse nil
+    :env {:mouse-down nil
+          :mouse-move nil
+          :mouse-up nil
           :time nil
           }
     :gui {:click-count 0
@@ -71,10 +73,14 @@
 
 (defonce setup-event-channels!
   (do
-    (swap-event-channel! :dom-viewport-resize
-                         (poly/channel-for-viewport-resize!))
-    (swap-event-channel! :env-mouse-move
-                         (poly/channel-for-mouse-move! js/window))
+    (swap-event-channel!
+     :dom-viewport-resize (poly/channel-for-viewport-resize!))
+    (swap-event-channel!
+     :env-mouse-down (poly/listen-put! js/window :mouse-down (poly/e-chan)))
+    (swap-event-channel!
+     :env-mouse-move (poly/channel-for-mouse-move! js/window))
+    (swap-event-channel!
+     :env-mouse-up (poly/listen-put! js/window :mouse-up (poly/e-chan)))
     true))
 
 
@@ -116,8 +122,14 @@
 (defonce rc-dom-viewport-w
   (cc-dom [:viewport :width]))
 
-(defonce rc-env-mouse
-  (cc-env [:mouse]))
+(defonce rc-env-mouse-down
+  (cc-env [:mouse-down]))
+
+(defonce rc-env-mouse-move
+  (cc-env [:mouse-move]))
+
+(defonce rc-env-mouse-up
+  (cc-env [:mouse-up]))
 
 ;; (defonce rc-env-mouse-pos-x
 ;;   (cc-env [:mouse-pos :x]))
@@ -145,8 +157,14 @@
 (defn mutate-env-time! []
   (reset! rc-env-time (poly/js-now)))
 
-(defn mutate-env-mouse! [mouse]
-  (reset! rc-env-mouse mouse))
+(defn mutate-env-mouse-down! [m]
+  (reset! rc-env-mouse-down m))
+
+(defn mutate-env-mouse-move! [m]
+  (reset! rc-env-mouse-move m))
+
+(defn mutate-env-mouse-up! [m]
+  (reset! rc-env-mouse-up m))
 
 (defn mutate-gui-click-count! []
   (reset! rc-gui-click-count))
@@ -161,8 +179,14 @@
 (defn on-dom-window-load [e]
   (mutate-dom-viewport-size! (poly/get-viewport-width) (poly/get-viewport-height)))
 
-(defn on-env-mouse-move [mouse]
-  (mutate-env-mouse! mouse))
+(defn on-env-mouse-down [m]
+  (mutate-env-mouse-down! m))
+
+(defn on-env-mouse-move [m]
+  (mutate-env-mouse-move! m))
+
+(defn on-env-mouse-up [m]
+  (mutate-env-mouse-up! m))
 
 (defn on-env-time-interval []
   (mutate-env-time!))
@@ -183,8 +207,14 @@
 (defonce listen-for-dom-window-load!
   (poly/listen! js/window "load" on-dom-window-load))
 
+(defonce listen-for-env-mouse-down!
+  (poly/listen-take! (get-event-channel :env-mouse-down) on-env-mouse-down))
+
 (defonce listen-for-env-mouse-move!
   (poly/listen-take! (get-event-channel :env-mouse-move) on-env-mouse-move))
+
+(defonce listen-for-env-mouse-up!
+  (poly/listen-take! (get-event-channel :env-mouse-up) on-env-mouse-up))
 
 
 ;; -----------------------------------------------------------------------------
@@ -308,7 +338,9 @@
     [:p "Document height " rc-dom-document-h "px"]
 ;    [:p "Document scroll " rc-dom-document-scroll-x " by " rc-dom-document-scroll-y]
 ;    [:p "Mouse position " "(" rc-env-mouse-pos-x ", " rc-env-mouse-pos-y ")"]
-    [:p "Mouse " (rx (str (into (sorted-map) @rc-env-mouse)))]
+    [:p "Mouse Move " (rx (str (into (sorted-map) @rc-env-mouse-move)))]
+    [:p "Mouse Down " (rx (str (into (sorted-map) @rc-env-mouse-down)))]
+    [:p "Mouse Up " (rx (str (into (sorted-map) @rc-env-mouse-up)))]
     [:p "Frames/second (60 max) " rdom/fps]
     [:p "Button Clicks " rc-gui-click-count " "
      [:button {:on-click on-gui-button-click} "Click Me!"]]
