@@ -75,16 +75,11 @@
 
 (defonce setup-event-channels!
   (do
-    (swap-event-channel!
-     :dom-viewport-resize (poly/channel-for-viewport-resize!))
-    (swap-event-channel!
-     :env-keyboard-key (poly/listen-put! js/window :key (poly/keyboard-e-chan)))
-    (swap-event-channel!
-     :env-mouse-down (poly/listen-put! js/window :mouse-down (poly/mouse-e-chan)))
-    (swap-event-channel!
-     :env-mouse-move (poly/listen-put! js/window :mouse-move (poly/mouse-e-chan)))
-    (swap-event-channel!
-     :env-mouse-up (poly/listen-put! js/window :mouse-up (poly/mouse-e-chan)))
+    (swap-event-channel! :dom-viewport-resize (poly/channel-for-viewport-resize!))
+    (swap-event-channel! :env-keyboard-key (poly/listen-put! js/window :key))
+    (swap-event-channel! :env-mouse-down (poly/listen-put! js/window :mouse-down))
+    (swap-event-channel! :env-mouse-move (poly/listen-put! js/window :mouse-move))
+    (swap-event-channel! :env-mouse-up (poly/listen-put! js/window :mouse-up))
     true))
 
 
