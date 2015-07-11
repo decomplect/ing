@@ -37,12 +37,12 @@
           :viewport {:width nil :height nil}
           }
     :ech {:dom-viewport-resize nil
-          :env-key-press nil
+          :env-keyboard-key nil
           :env-mouse-down nil
           :env-mouse-move nil
           :env-mouse-up nil
           }
-    :env {:key-press nil
+    :env {:keyboard-key nil
           :mouse-down nil
           :mouse-move nil
           :mouse-up nil
@@ -78,8 +78,7 @@
     (swap-event-channel!
      :dom-viewport-resize (poly/channel-for-viewport-resize!))
     (swap-event-channel!
-;     :env-key-press (poly/listen-put! (poly/get-body) :key-press (poly/keyboard-e-chan)))
-     :env-key-press (poly/listen-put! js/window :key-press (poly/keyboard-e-chan)))
+     :env-keyboard-key (poly/listen-put! js/window :key (poly/keyboard-e-chan)))
     (swap-event-channel!
      :env-mouse-down (poly/listen-put! js/window :mouse-down (poly/mouse-e-chan)))
     (swap-event-channel!
@@ -127,8 +126,8 @@
 (defonce rc-dom-viewport-w
   (cc-dom [:viewport :width]))
 
-(defonce rc-env-key-press
-  (cc-env [:key-press]))
+(defonce rc-env-keyboard-key
+  (cc-env [:keyboard-key]))
 
 (defonce rc-env-mouse-down
   (cc-env [:mouse-down]))
@@ -165,8 +164,8 @@
 (defn mutate-env-time! []
   (reset! rc-env-time (poly/js-now)))
 
-(defn mutate-env-key-press! [m]
-  (reset! rc-env-key-press m))
+(defn mutate-env-keyboard-key! [m]
+  (reset! rc-env-keyboard-key m))
 
 (defn mutate-env-mouse-down! [m]
   (reset! rc-env-mouse-down m))
@@ -190,8 +189,8 @@
 (defn on-dom-window-load [e]
   (mutate-dom-viewport-size! (poly/get-viewport-width) (poly/get-viewport-height)))
 
-(defn on-env-key-press [m]
-  (mutate-env-key-press! m))
+(defn on-env-keyboard-key [m]
+  (mutate-env-keyboard-key! m))
 
 (defn on-env-mouse-down [m]
   (mutate-env-mouse-down! m))
@@ -215,7 +214,7 @@
 (defonce setup-event-take-backs!
   (do
     (poly/take-back! (get-event-channel :dom-viewport-resize) on-dom-viewport-resize)
-    (poly/take-back! (get-event-channel :env-key-press) on-env-key-press)
+    (poly/take-back! (get-event-channel :env-keyboard-key) on-env-keyboard-key)
     (poly/take-back! (get-event-channel :env-mouse-down) on-env-mouse-down)
     (poly/take-back! (get-event-channel :env-mouse-move) on-env-mouse-move)
     (poly/take-back! (get-event-channel :env-mouse-up) on-env-mouse-up)
@@ -346,7 +345,7 @@
     [:p "Document height " rc-dom-document-h "px"]
 ;    [:p "Document scroll " rc-dom-document-scroll-x " by " rc-dom-document-scroll-y]
 ;    [:p "Mouse position " "(" rc-env-mouse-pos-x ", " rc-env-mouse-pos-y ")"]
-    [:p "Key Press " (rx (str (into (sorted-map) @rc-env-key-press)))]
+    [:p "Keyboard Key " (rx (str (into (sorted-map) @rc-env-keyboard-key)))]
     [:p "Mouse Move " (rx (str (into (sorted-map) @rc-env-mouse-move)))]
     [:p "Mouse Down " (rx (str (into (sorted-map) @rc-env-mouse-down)))]
     [:p "Mouse Up " (rx (str (into (sorted-map) @rc-env-mouse-up)))]
