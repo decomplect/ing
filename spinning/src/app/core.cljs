@@ -2,9 +2,13 @@
   (:require-macros
    [klang.macros :as macros])
   (:require
+   [ankha.core :as ankha]
+   [clairvoyant.core :as trace :include-macros true]
    [ion.omni.core :as omni]
    [ion.poly.core :as poly]
-   [klang.core :as k]
+   [klang.core :as klang]
+   [shodan.console :as console :include-macros true]
+   [shodan.inspection :refer [inspect]]
    ))
 
 ;(trace/trace-forms {:tracer trace/default-tracer})
@@ -17,11 +21,10 @@
 
 (defn init-logging! []
   ;(macros/add-form-meta! :line :file)
-  (k/init-single-mode!)
-  (k/init!)
-  (k/default-config!)
-  (k/logger ::INFO)
-  (k/show!))
+  (klang/init-single-mode!)
+  (klang/init!)
+  (klang/default-config!)
+  (klang/logger ::INFO))
 
 (defonce lg (init-logging!))
 
@@ -85,10 +88,10 @@
 ;; Event Handlers
 
 (defn on-env-keyboard-key [m]
-  (prn m)
+  (console/info m)
   (lg :on-env-keyboard-key m)
   (condp = (:keyword m)
-    :q :>> #(k/show!)
+    :q :>> #(klang/show!)
     nil))
 
 (defn on-env-mouse-move [m]
@@ -143,16 +146,18 @@
 ;; Init/Load
 
 (defn ^:export on-init []
-  ;(prn "init")
-  ;(lg :on-init "Start intializing.")
+  (console/info "on-init")
+  (lg :on-init "Start intializing.")
   (poly/set-title! (get-in @state [:app :name]))
   ; Create a canvas element inside the "app" div.
-  ;(lg :on-init "End intializing.")
+  (lg :on-init "End intializing.")
+  ;(klang/show!)
+  (inspect @state)
   (spin))
 
 (defn ^:export on-load []
   ; stop
-  (prn "on-load")
+  (console/info "on-load")
   (lg :on-load "Dom is in the house!")
   ; re-start
   )
