@@ -81,6 +81,9 @@
 ;; -----------------------------------------------------------------------------
 ;; Event Handlers
 
+(defn on-env-frames-per-second [fps]
+  (swap! state assoc-in [:env :frames-per-second] fps))
+
 (defn on-env-keyboard-key [m]
   (console/info (:ion.poly.core/keyword m))
   (inspect m)
@@ -100,7 +103,7 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; Event Channel Processing
+;; Event Subscriptions
 
 ;; (defonce setup-event-take-backs!
 ;;   (poly/take-back! (second (poly/listen-put! js/window :key)) on-env-keyboard-key))
@@ -110,6 +113,9 @@
     (poly/take-back! (get-event-channel :env-keyboard-key) on-env-keyboard-key)
     (poly/take-back! (get-event-channel :env-mouse-move) on-env-mouse-move)
   true))
+
+(defonce setup-fps!
+  (poly/listen-fps! on-env-frames-per-second))
 
 
 ;; -----------------------------------------------------------------------------
@@ -122,13 +128,10 @@
 ;; -----------------------------------------------------------------------------
 ;; Simple Animation Cycle
 
-(defn enable-fps! []
-  (swap! state assoc-in [:env :frames-per-second] (poly/measure-fps)))
-
 (defn animate [timestamp state]
   (let [app-name (get-in state [:app :name])
         env-time (get-in state [:env :time])
-        fps @(get-in state [:env :frames-per-second])
+        fps (get-in state [:env :frames-per-second])
         mouse-move (get-in state [:env :mouse-move])
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
@@ -180,7 +183,6 @@
   (lg :on-init "End intializing.")
   ;(klang/show!)
   ;(inspect @state)
-  (enable-fps!)
   (request-simple-animation)
   ;(request-step)
   )
