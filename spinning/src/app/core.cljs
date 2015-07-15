@@ -2,9 +2,10 @@
   (:require-macros
    [klang.macros :as macros])
   (:require
-   [ankha.core :as ankha]
+   ;[ankha.core :as ankha]
    [clairvoyant.core :as trace :include-macros true]
-   [ion.omni.core :as omni]
+   [clojure.string :as string]
+   ;[ion.omni.core :as omni]
    [ion.poly.core :as poly]
    [klang.core :as klang]
    [shodan.console :as console :include-macros true]
@@ -20,13 +21,19 @@
 ;; Logging
 
 (defn init-logging! []
-  ;(macros/add-form-meta! :line :file)
+  (macros/add-form-meta! :line :file)
   (klang/init-single-mode!)
   (klang/init!)
   (klang/default-config!)
   (klang/logger ::INFO))
 
 (defonce lg (init-logging!))
+
+
+;; -----------------------------------------------------------------------------
+;; App Div
+
+(defonce app-div (poly/get-element :app))
 
 
 ;; -----------------------------------------------------------------------------
@@ -41,7 +48,8 @@
           :env-mouse-click nil
           :env-mouse-move nil
           }
-    :env {:keyboard-key nil
+    :env {:frames-per-second nil
+          :keyboard-key nil
           :mouse-move nil
           :time nil
           }
@@ -64,7 +72,6 @@
 
 (defonce setup-event-channels!
   (do
-    (lg "Setting up event channels")
     (swap-event-channel! :env-keyboard-key (poly/listen-put! js/window :key))
     (swap-event-channel! :env-mouse-click (poly/listen-put! js/window :mouse-click))
     (swap-event-channel! :env-mouse-move (poly/listen-put! js/window :mouse-move))
@@ -72,39 +79,21 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; State Mutators
-
-;; (defn mutate-env-keyboard-key! [m]
-;;   (reset! rc-env-keyboard-key m))
-
-;; (defn mutate-env-mouse-move! [m]
-;;   (reset! rc-env-mouse-move m))
-
-;; (defn mutate-gui-click-count! []
-;;   (reset! rc-gui-click-count))
-
-
-;; -----------------------------------------------------------------------------
 ;; Event Handlers
 
 (defn on-env-keyboard-key [m]
-  (console/info m)
-  (lg :on-env-keyboard-key m)
-  (condp = (:keyword m)
+  (console/info (:ion.poly.core/keyword m))
+  (inspect m)
+  (condp = (:ion.poly.core/keyword m)
+    :a :>> #(klang/hide!)
     :q :>> #(klang/show!)
     nil))
 
 (defn on-env-mouse-move [m]
-  #_(lg :on-env-mouse-move m))
+  (swap! state assoc-in [:env :mouse-move] m))
 
-;; (defn on-env-keyboard-key [m]
-;;   (mutate-env-keyboard-key! m))
-
-;; (defn on-env-mouse-move [m]
-;;   (mutate-env-mouse-move! m))
-
-;; (defn on-env-time-interval []
-;;   (mutate-env-time!))
+(defn on-env-time-interval []
+  (swap! state assoc-in [:env :time] (poly/js-now)))
 
 ;; (defn on-gui-button-click [e]
 ;;   (mutate-gui-click-count!))
@@ -126,20 +115,58 @@
 ;; -----------------------------------------------------------------------------
 ;; Timers
 
-;; (defonce interval-for-env-time
-;;   (js/setInterval on-env-time-interval 1000))  ; every second (1000 ms)
+(defonce interval-for-env-time
+  (js/setInterval on-env-time-interval 1000))  ; every second (1000 ms)
 
 
 ;; -----------------------------------------------------------------------------
-;; Render / Spin
+;; Simple Animation Cycle
 
-(defn render [state]
+(defn enable-fps! []
+  (swap! state assoc-in [:env :frames-per-second] (poly/measure-fps)))
+
+(defn animate [timestamp state]
+  (let [app-name (get-in state [:app :name])
+        env-time (get-in state [:env :time])
+        fps @(get-in state [:env :frames-per-second])
+        mouse-move (get-in state [:env :mouse-move])
+        mouse-x (:client-x mouse-move)
+        mouse-y (:client-y mouse-move)
+        mouse-pos (str "[" mouse-x ":" mouse-y "]")]
+    (set! (.-innerText app-div)
+          (string/join ", " [app-name fps env-time timestamp mouse-pos]))))
+
+(declare request-simple-animation)
+
+(defn simple-animation-cycle [timestamp]
+  (request-simple-animation)
+  (animate timestamp @state))
+
+(def request-simple-animation (partial poly/request-animation-frame
+                                       simple-animation-cycle))
+
+
+;; -----------------------------------------------------------------------------
+;; Simple Render Cycle
+
+(defn render []
   ;Update the dom
   true)
 
-(defn spin []
-  (omni/spin :on-render render
-             :state state))
+(defn request-frame [f]
+  (poly/request-animation-frame f))
+
+(declare step)
+
+(def request-step (partial request-frame step))
+
+(defn step [timestamp]
+  (request-step)
+  (render))
+
+(defn simple-render-cycle [timestamp]
+  (poly/request-animation-frame simple-render-cycle)
+  (render))
 
 
 ;; -----------------------------------------------------------------------------
@@ -152,12 +179,15 @@
   ; Create a canvas element inside the "app" div.
   (lg :on-init "End intializing.")
   ;(klang/show!)
-  (inspect @state)
-  (spin))
+  ;(inspect @state)
+  (enable-fps!)
+  (request-simple-animation)
+  ;(request-step)
+  )
 
 (defn ^:export on-load []
   ; stop
   (console/info "on-load")
-  (lg :on-load "Dom is in the house!")
+  (lg :on-load "The Dom is in the house!")
   ; re-start
   )
