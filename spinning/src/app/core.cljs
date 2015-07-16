@@ -44,7 +44,7 @@
    {:app {:name "Spinning"
           :version "0.1.0"
           :measure-fps? false
-          :simple-animation? false
+          :rendering? false
           }
     :ech {:env-keyboard-key nil
           :env-mouse-click nil
@@ -128,9 +128,9 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; Simple Animation Cycle
+;; Render Cycle
 
-(defn animate [timestamp state]
+(defn render! [timestamp state]
   (let [app-name (get-in state [:app :name])
         env-time (get-in state [:env :time])
         fps (get-in state [:env :frames-per-second])
@@ -141,45 +141,15 @@
     (set! (.-innerText (app-div))
           (string/join ", " [app-name fps env-time timestamp mouse-pos]))))
 
-(declare request-simple-animation)
+(defn on-env-animation-frame [timestamp]
+  (render! timestamp @state)
+  (get-in @state [:app :rendering?]))
 
-(defn simple-animation-cycle [timestamp]
-  (when (get-in @state [:app :simple-animation?])
-    (request-simple-animation)
-    (animate timestamp @state)))
+(defn start-rendering! []
+  (poly/listen-animation-frame! on-env-animation-frame))
 
-(def request-simple-animation (partial poly/request-animation-frame
-                                       simple-animation-cycle))
-
-(defn setup-simple-animation! []
-  (swap! state assoc-in [:app :simple-animation?] true)
-  (request-simple-animation))
-
-(defn teardown-simple-animation! []
-  (swap! state assoc-in [:app :simple-animation?] false))
-
-
-;; -----------------------------------------------------------------------------
-;; Simple Render Cycle
-
-(defn render []
-  ;Update the dom
-  true)
-
-(defn request-frame [f]
-  (poly/request-animation-frame f))
-
-(declare step)
-
-(def request-step (partial request-frame step))
-
-(defn step [timestamp]
-  (request-step)
-  (render))
-
-(defn simple-render-cycle [timestamp]
-  (poly/request-animation-frame simple-render-cycle)
-  (render))
+(defn stop-rendering! []
+  (swap! state assoc-in [:app :rendering?] false))
 
 
 ;; -----------------------------------------------------------------------------
@@ -190,11 +160,11 @@
   (poly/set-title! (get-in @state [:app :name]))
   (setup-event-channels!)
   (setup-event-subscriptions!)
-  (setup-simple-animation!))
+  (start-rendering!))
 
 (defn teardown []
   (console/info "teardown")
-  (teardown-simple-animation!)
+  (stop-rendering!)
   (teardown-event-subscriptions!)
   (teardown-event-channels!))
 
