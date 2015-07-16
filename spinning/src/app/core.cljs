@@ -33,7 +33,7 @@
 ;; -----------------------------------------------------------------------------
 ;; App Div
 
-(defonce app-div (poly/get-element :app))
+(defn app-div [] (poly/get-element :app))
 
 
 ;; -----------------------------------------------------------------------------
@@ -43,6 +43,8 @@
   (atom
    {:app {:name "Spinning"
           :version "0.1.0"
+          :measure-fps? false
+          :simple-animation? false
           }
     :ech {:env-keyboard-key nil
           :env-mouse-click nil
@@ -66,28 +68,34 @@
 (defn get-event-listener-key [k]
   (get-in @state [:ech k :listener-key]))
 
-(defn swap-event-channel! [k [listener-key channel]]
+(defn setup-event-channel! [k [listener-key channel]]
   (swap! state assoc-in [:ech k]
          {:channel channel :listener-key listener-key}))
 
-(defonce setup-event-channels!
-  (do
-    (swap-event-channel! :env-keyboard-key (poly/listen-put! js/window :key))
-    (swap-event-channel! :env-mouse-click (poly/listen-put! js/window :mouse-click))
-    (swap-event-channel! :env-mouse-move (poly/listen-put! js/window :mouse-move))
-    true))
+(defn setup-event-channels! []
+  (setup-event-channel! :env-keyboard-key (poly/listen-put! js/window :key))
+  (setup-event-channel! :env-mouse-click (poly/listen-put! js/window :mouse-click))
+  (setup-event-channel! :env-mouse-move (poly/listen-put! js/window :mouse-move)))
+
+(defn teardown-event-channel! [k]
+  (poly/unlisten! (get-event-listener-key k) (get-event-channel k))
+  (swap! state assoc-in [:ech k] nil))
+
+(defn teardown-event-channels! []
+  (map teardown-event-channel! (keys (:ech @state))))
 
 
 ;; -----------------------------------------------------------------------------
 ;; Event Handlers
 
 (defn on-env-frames-per-second [fps]
-  (swap! state assoc-in [:env :frames-per-second] fps))
+  (swap! state assoc-in [:env :frames-per-second] fps)
+  (get-in @state [:app :measure-fps?]))
 
 (defn on-env-keyboard-key [m]
-  (console/info (:ion.poly.core/keyword m))
-  (inspect m)
-  (condp = (:ion.poly.core/keyword m)
+  (console/info (:poly/keyword m))
+  ;(inspect m)
+  (condp = (:poly/keyword m)
     :a :>> #(klang/hide!)
     :q :>> #(klang/show!)
     nil))
@@ -98,31 +106,25 @@
 (defn on-env-time-interval []
   (swap! state assoc-in [:env :time] (poly/js-now)))
 
-;; (defn on-gui-button-click [e]
-;;   (mutate-gui-click-count!))
-
 
 ;; -----------------------------------------------------------------------------
 ;; Event Subscriptions
 
-;; (defonce setup-event-take-backs!
-;;   (poly/take-back! (second (poly/listen-put! js/window :key)) on-env-keyboard-key))
+(defn setup-event-subscriptions! []
+  (swap! state assoc-in [:app :measure-fps?] true)
+  (poly/listen-fps! on-env-frames-per-second)
+  (poly/take-back! (get-event-channel :env-keyboard-key) on-env-keyboard-key)
+  (poly/take-back! (get-event-channel :env-mouse-move) on-env-mouse-move))
 
-(defonce setup-event-take-backs!
-  (do
-    (poly/take-back! (get-event-channel :env-keyboard-key) on-env-keyboard-key)
-    (poly/take-back! (get-event-channel :env-mouse-move) on-env-mouse-move)
-  true))
-
-(defonce setup-fps!
-  (poly/listen-fps! on-env-frames-per-second))
+(defn teardown-event-subscriptions! []
+  (swap! state assoc-in [:app :measure-fps?] false))
 
 
 ;; -----------------------------------------------------------------------------
 ;; Timers
 
-(defonce interval-for-env-time
-  (js/setInterval on-env-time-interval 1000))  ; every second (1000 ms)
+;; (defonce interval-for-env-time
+;;   (js/setInterval on-env-time-interval 1000))  ; every second (1000 ms)
 
 
 ;; -----------------------------------------------------------------------------
@@ -136,17 +138,25 @@
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
         mouse-pos (str "[" mouse-x ":" mouse-y "]")]
-    (set! (.-innerText app-div)
+    (set! (.-innerText (app-div))
           (string/join ", " [app-name fps env-time timestamp mouse-pos]))))
 
 (declare request-simple-animation)
 
 (defn simple-animation-cycle [timestamp]
-  (request-simple-animation)
-  (animate timestamp @state))
+  (when (get-in @state [:app :simple-animation?])
+    (request-simple-animation)
+    (animate timestamp @state)))
 
 (def request-simple-animation (partial poly/request-animation-frame
                                        simple-animation-cycle))
+
+(defn setup-simple-animation! []
+  (swap! state assoc-in [:app :simple-animation?] true)
+  (request-simple-animation))
+
+(defn teardown-simple-animation! []
+  (swap! state assoc-in [:app :simple-animation?] false))
 
 
 ;; -----------------------------------------------------------------------------
@@ -173,23 +183,29 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; Init/Load
+;; Init/Load/Setup/Teardown
+
+(defn setup []
+  (console/info "setup")
+  (poly/set-title! (get-in @state [:app :name]))
+  (setup-event-channels!)
+  (setup-event-subscriptions!)
+  (setup-simple-animation!))
+
+(defn teardown []
+  (console/info "teardown")
+  (teardown-simple-animation!)
+  (teardown-event-subscriptions!)
+  (teardown-event-channels!))
+
+(defn ^:export on-load []
+  (console/info "on-load")
+  (teardown)
+  (setup))
 
 (defn ^:export on-init []
   (console/info "on-init")
-  (lg :on-init "Start intializing.")
-  (poly/set-title! (get-in @state [:app :name]))
   ; Create a canvas element inside the "app" div.
-  (lg :on-init "End intializing.")
-  ;(klang/show!)
+  (setup)
   ;(inspect @state)
-  (request-simple-animation)
-  ;(request-step)
-  )
-
-(defn ^:export on-load []
-  ; stop
-  (console/info "on-load")
-  (lg :on-load "The Dom is in the house!")
-  ; re-start
   )
