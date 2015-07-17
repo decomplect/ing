@@ -5,6 +5,8 @@
    ;[ankha.core :as ankha]
    [clairvoyant.core :as trace :include-macros true]
    [clojure.string :as string]
+   [goog.dom :as dom]
+   [goog.object]
    ;[ion.omni.core :as omni]
    [ion.poly.core :as poly]
    [klang.core :as klang]
@@ -31,9 +33,11 @@
 
 
 ;; -----------------------------------------------------------------------------
-;; App Div
+;; App Div / Canvas
 
 (defn app-div [] (poly/get-element :app))
+
+(defn app-canvas [] (poly/get-element :app-canvas))
 
 
 ;; -----------------------------------------------------------------------------
@@ -55,7 +59,9 @@
           :mouse-move nil
           :time nil
           }
-    :gui {:click-count 0
+    :gui {:cells nil
+          :frame 0
+          :generation 0
           }}))
 
 
@@ -92,12 +98,14 @@
   (swap! state assoc-in [:env :frames-per-second] fps)
   (get-in @state [:app :measure-fps?]))
 
+(declare start-rendering! stop-rendering!)
+
 (defn on-env-keyboard-key [m]
   (console/info (:poly/keyword m))
   ;(inspect m)
   (condp = (:poly/keyword m)
-    :a :>> #(klang/hide!)
-    :q :>> #(klang/show!)
+    :a :>> #(start-rendering!)
+    :q :>> #(stop-rendering!)
     nil))
 
 (defn on-env-mouse-move [m]
@@ -123,12 +131,46 @@
 ;; -----------------------------------------------------------------------------
 ;; Timers
 
-;; (defonce interval-for-env-time
-;;   (js/setInterval on-env-time-interval 1000))  ; every second (1000 ms)
+(defonce interval-for-env-time
+  (js/setInterval on-env-time-interval 1000))  ; every second (1000 ms)
 
 
 ;; -----------------------------------------------------------------------------
-;; Render Cycle
+;; Conway's Game of Life Cellular Automata
+
+(def acorn #{[70 62] [71 60] [71 62] [73 61] [74 62] [75 62] [76 62]})
+
+(defn setup-gol! []
+  (swap! state assoc-in [:gui :cells] acorn))
+
+(defn teardown-gol! []
+  (swap! state assoc-in [:gui :cells] false))
+
+(defn neighbors [[x y]]
+  (map vector
+       ((juxt inc      inc identity dec dec      dec identity inc) x)
+       ((juxt identity inc inc      inc identity dec dec      dec) y)))
+
+(defn create-cell
+  ([]
+   {:age 0 :color {:r (rand-int 256) :g (rand-int 256) :b (rand-int 256)}})
+  ([k cells]
+   ; Set newborn cell color using a blend of colors of its 3 living neighbors.
+   (let [[c1 c2 c3] (map #(:color %1) (keep #(get cells %1) (neighbors k)))]
+     {:age 0 :color {:r (:r c1) :g (:g c2) :b (:b c3)}})))
+
+(defn step [cells]
+  (into {} (for [[k n] (->> (keys cells) (mapcat neighbors) (frequencies))
+                 :let [cell (or (get cells k) (create-cell k cells))]
+                 :when (or (= n 3) (and (= n 2) (contains? cells k)))]
+             [k (update-in cell [:age] inc)])))
+
+
+;; -----------------------------------------------------------------------------
+;; Update / Render Cycle
+
+(defn update! []
+  (swap! state update-in [:gui :generation] inc))
 
 (defn render! [timestamp state]
   (let [app-name (get-in state [:app :name])
@@ -137,34 +179,41 @@
         mouse-move (get-in state [:env :mouse-move])
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
-        mouse-pos (str "[" mouse-x ":" mouse-y "]")]
-    (set! (.-innerText (app-div))
-          (string/join ", " [app-name fps env-time timestamp mouse-pos]))))
+        mouse-pos (str "[" mouse-x ":" mouse-y "]")
+        gen (get-in state [:gui :generation])
+        display [gen fps env-time timestamp mouse-pos]]
+    (set! (.-innerText (app-div)) (string/join ", " display))))
 
 (defn on-env-animation-frame [timestamp]
+  (update!)
   (render! timestamp @state)
   (get-in @state [:app :rendering?]))
 
 (defn start-rendering! []
+  (console/info "start rendering")
+  (swap! state assoc-in [:app :rendering?] true)
   (poly/listen-animation-frame! on-env-animation-frame))
 
 (defn stop-rendering! []
+  (console/info "stop rendering")
   (swap! state assoc-in [:app :rendering?] false))
 
 
 ;; -----------------------------------------------------------------------------
-;; Init/Load/Setup/Teardown
+;; Init / Load / Setup / Teardown
 
 (defn setup []
   (console/info "setup")
   (poly/set-title! (get-in @state [:app :name]))
   (setup-event-channels!)
   (setup-event-subscriptions!)
+  (setup-gol!)
   (start-rendering!))
 
 (defn teardown []
   (console/info "teardown")
   (stop-rendering!)
+  (teardown-gol!)
   (teardown-event-subscriptions!)
   (teardown-event-channels!))
 
@@ -175,7 +224,11 @@
 
 (defn ^:export on-init []
   (console/info "on-init")
-  ; Create a canvas element inside the "app" div.
+  (let [canvas (dom/createElement "canvas")]
+    (goog.object/set canvas "id" "app-canvas")
+    (goog.object/set canvas "width" 800)
+    (goog.object/set canvas "height" 800)
+    (dom/appendChild (poly/get-body) canvas))
   (setup)
   ;(inspect @state)
   )
