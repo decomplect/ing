@@ -47,6 +47,7 @@
   (atom
    {:app {:name "Spinning"
           :version "0.1.0"
+          :count-frames? false
           :measure-fps? false
           :rendering? false
           }
@@ -54,13 +55,13 @@
           :env-mouse-click nil
           :env-mouse-move nil
           }
-    :env {:frames-per-second nil
+    :env {:frame-count 0
+          :frames-per-second 0
           :keyboard-key nil
           :mouse-move nil
           :time nil
           }
     :gui {:cells nil
-          :frame 0
           :generation 0
           }}))
 
@@ -94,6 +95,10 @@
 ;; -----------------------------------------------------------------------------
 ;; Event Handlers
 
+(defn on-env-animation-frame [timestamp]
+  (swap! state update-in [:env :frame-count] inc)
+  (get-in @state [:app :count-frames?]))
+
 (defn on-env-frames-per-second [fps]
   (swap! state assoc-in [:env :frames-per-second] fps)
   (get-in @state [:app :measure-fps?]))
@@ -119,13 +124,18 @@
 ;; Event Subscriptions
 
 (defn setup-event-subscriptions! []
+  (swap! state assoc-in [:app :count-frames?] true)
+  (poly/listen-animation-frame! on-env-animation-frame)
   (swap! state assoc-in [:app :measure-fps?] true)
   (poly/listen-fps! on-env-frames-per-second)
   (poly/take-back! (get-event-channel :env-keyboard-key) on-env-keyboard-key)
   (poly/take-back! (get-event-channel :env-mouse-move) on-env-mouse-move))
 
 (defn teardown-event-subscriptions! []
-  (swap! state assoc-in [:app :measure-fps?] false))
+  (swap! state assoc-in [:app :count-frames?] false)
+  (swap! state assoc-in [:env :frame-count] 0))
+  (swap! state assoc-in [:app :measure-fps?] false)
+  (swap! state assoc-in [:env :frames-per-second] 0)
 
 
 ;; -----------------------------------------------------------------------------
@@ -140,12 +150,6 @@
 
 (def acorn #{[70 62] [71 60] [71 62] [73 61] [74 62] [75 62] [76 62]})
 
-(defn setup-gol! []
-  (swap! state assoc-in [:gui :cells] acorn))
-
-(defn teardown-gol! []
-  (swap! state assoc-in [:gui :cells] false))
-
 (defn neighbors [[x y]]
   (map vector
        ((juxt inc      inc identity dec dec      dec identity inc) x)
@@ -159,32 +163,44 @@
    (let [[c1 c2 c3] (map #(:color %1) (keep #(get cells %1) (neighbors k)))]
      {:age 0 :color {:r (:r c1) :g (:g c2) :b (:b c3)}})))
 
+(defn create-cells [seed]
+  (into {} (for [k seed] [k (create-cell)])))
+
 (defn step [cells]
   (into {} (for [[k n] (->> (keys cells) (mapcat neighbors) (frequencies))
                  :let [cell (or (get cells k) (create-cell k cells))]
                  :when (or (= n 3) (and (= n 2) (contains? cells k)))]
              [k (update-in cell [:age] inc)])))
 
+(defn setup-gol! []
+  (swap! state assoc-in [:gui :cells] (create-cells acorn)))
+
+(defn teardown-gol! []
+  (swap! state assoc-in [:gui :cells] nil))
+
 
 ;; -----------------------------------------------------------------------------
-;; Update / Render Cycle
+;; Update / Render / Cycle
 
 (defn update! []
-  (swap! state update-in [:gui :generation] inc))
+  (swap! state update-in [:gui :generation] inc)
+  (swap! state update-in [:gui :cells] step))
 
 (defn render! [timestamp state]
   (let [app-name (get-in state [:app :name])
         env-time (get-in state [:env :time])
-        fps (get-in state [:env :frames-per-second])
+        f-count (str "F: " (get-in state [:env :frame-count]))
+        fps (str "FPS: " (get-in state [:env :frames-per-second]))
         mouse-move (get-in state [:env :mouse-move])
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
-        mouse-pos (str "[" mouse-x ":" mouse-y "]")
-        gen (get-in state [:gui :generation])
-        display [gen fps env-time timestamp mouse-pos]]
+        mouse-pos (str "M: [" mouse-x ":" mouse-y "]")
+        generation (str "G: " (get-in state [:gui :generation]))
+        population (str "P: " (count (get-in state [:gui :cells])))
+        display [f-count fps generation population]]
     (set! (.-innerText (app-div)) (string/join ", " display))))
 
-(defn on-env-animation-frame [timestamp]
+(defn cycle! [timestamp]
   (update!)
   (render! timestamp @state)
   (get-in @state [:app :rendering?]))
@@ -192,7 +208,7 @@
 (defn start-rendering! []
   (console/info "start rendering")
   (swap! state assoc-in [:app :rendering?] true)
-  (poly/listen-animation-frame! on-env-animation-frame))
+  (poly/listen-animation-frame! cycle!))
 
 (defn stop-rendering! []
   (console/info "stop rendering")
