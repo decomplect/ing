@@ -128,7 +128,7 @@
   (swap! state assoc-in [:app :count-frames?] true)
   (poly/listen-animation-frame! on-env-animation-frame)
   (swap! state assoc-in [:app :measure-fps?] true)
-  (poly/listen-fps! on-env-frames-per-second)
+  (poly/listen-fps-interval! on-env-frames-per-second)
   (poly/take-back! (get-event-channel :env-keyboard-key) on-env-keyboard-key)
   (poly/take-back! (get-event-channel :env-mouse-move) on-env-mouse-move))
 
