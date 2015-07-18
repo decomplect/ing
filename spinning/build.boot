@@ -34,3 +34,10 @@
     cljs {:optimizations :none
           :source-map true})
   (comp (serve) (watch) (speak) (reload) (cljs-repl) (cljs)))
+
+(deftask pro []
+  (set-env! :source-paths #{"src"})
+  (task-options!
+    cljs {:optimizations :advanced
+          :source-map true})
+  (comp (speak) (cljs)))
