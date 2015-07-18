@@ -49,7 +49,8 @@
           :version "0.1.0"
           :count-frames? false
           :measure-fps? false
-          :rendering? false
+          :render? false
+          :update-gol? false
           }
     :ech {:env-keyboard-key nil
           :env-mouse-click nil
@@ -61,7 +62,7 @@
           :mouse-move nil
           :time nil
           }
-    :gui {:cells nil
+    :gol {:cells nil
           :generation 0
           }}))
 
@@ -103,14 +104,14 @@
   (swap! state assoc-in [:env :frames-per-second] fps)
   (get-in @state [:app :measure-fps?]))
 
-(declare start-rendering! stop-rendering!)
+(declare start-gol! stop-gol!)
 
 (defn on-env-keyboard-key [m]
   (console/info (:poly/keyword m))
   ;(inspect m)
   (condp = (:poly/keyword m)
-    :a :>> #(start-rendering!)
-    :q :>> #(stop-rendering!)
+    :a :>> #(start-gol!)
+    :q :>> #(stop-gol!)
     nil))
 
 (defn on-env-mouse-move [m]
@@ -173,18 +174,75 @@
              [k (update-in cell [:age] inc)])))
 
 (defn setup-gol! []
-  (swap! state assoc-in [:gui :cells] (create-cells acorn)))
+  (swap! state assoc-in [:gol :cells] (create-cells acorn)))
 
 (defn teardown-gol! []
-  (swap! state assoc-in [:gui :cells] nil))
+  (swap! state assoc-in [:gol :cells] nil))
+
+(defn update-gol! []
+  (swap! state update-in [:gol :cells] step)
+  (swap! state update-in [:gol :generation] inc)
+  (get-in @state [:app :update-gol?]))
+
+(defn start-gol! []
+  (console/info "start gol")
+  (swap! state assoc-in [:app :update-gol?] true)
+  (poly/listen-next-tick! update-gol!))
+
+(defn stop-gol! []
+  (console/info "stop gol")
+  (swap! state assoc-in [:app :update-gol?] false))
+
+
+
+;; (defn neighbours
+;;   "Given a cell's coordinates, returns the coordinates of its neighbours."
+;;   [[x y]]
+;;   (for [dx [-1 0 1] dy (if (zero? dx) [-1 1] [-1 0 1])]
+;;     [(+ dx x) (+ dy y)]))
+
+;; (defn step
+;;   "Given a set of living cells, computes the new set of living cells."
+;;   [cells]
+;;   (set (for [[cell n] (frequencies (mapcat neighbours cells))
+;;              :when (or (= n 3) (and (= n 2) (cells cell)))]
+;;          cell)))
+
+
+
+;; (defn neighbors [[x y]]
+;;   (for [dx [-1 0 1]
+;;         dy (if (zero? dx) [-1 1] [-1 0 1])]
+;;     [(+ dx x) (+ dy y)]))
+
+;; (defn changed-cells [[x y]]
+;;   (for [dx [-1 0 1]
+;;         dy  [-1 0 1]]
+;;     [(+ dx x) (+ dy y)]))
+
+;; (defn step [state]
+;;   (let [{:keys [cells changed]} state
+;;         changed-neighborhood (set (mapcat changed-cells-memo changed))
+;;         changed-and-alive (s/intersection changed-neighborhood cells)
+;;         changed-cells (frequencies (mapcat neighbors-memo changed-and-alive))
+;;         live-counts (reduce (fn [acc loc] (assoc acc loc 0)) {} changed-and-alive)
+;;         changed-cells (merge live-counts changed-cells)
+;;         state (assoc state :changed #{})]
+;;     (reduce (fn [acc [loc n]]
+;;               (cond (and (cells loc) (or (< n 2) (> n 3)))
+;;                     (-> acc
+;;                         (update-in [:cells] disj loc)
+;;                         (update-in [:changed] conj loc))
+;;                     (and (nil? (cells loc)) (= n 3))
+;;                     (-> acc
+;;                         (update-in [:cells] conj loc)
+;;                         (update-in [:changed] conj loc))
+;;                     :else acc)) state changed-cells)))
+
 
 
 ;; -----------------------------------------------------------------------------
-;; Update / Render / Cycle
-
-(defn update! []
-  (swap! state update-in [:gui :generation] inc)
-  (swap! state update-in [:gui :cells] step))
+;; Render Cycle
 
 (defn render! [timestamp state]
   (let [app-name (get-in state [:app :name])
@@ -195,20 +253,19 @@
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
         mouse-pos (str "M: [" mouse-x ":" mouse-y "]")
-        generation (str "G: " (get-in state [:gui :generation]))
-        population (str "P: " (count (get-in state [:gui :cells])))
+        generation (str "G: " (get-in state [:gol :generation]))
+        population (str "P: " (count (get-in state [:gol :cells])))
         display [f-count fps generation population]]
     (set! (.-innerText (app-div)) (string/join ", " display))))
 
-(defn cycle! [timestamp]
-  (update!)
+(defn render-cycle! [timestamp]
   (render! timestamp @state)
   (get-in @state [:app :rendering?]))
 
 (defn start-rendering! []
   (console/info "start rendering")
   (swap! state assoc-in [:app :rendering?] true)
-  (poly/listen-animation-frame! cycle!))
+  (poly/listen-animation-frame! render-cycle!))
 
 (defn stop-rendering! []
   (console/info "stop rendering")
@@ -224,10 +281,12 @@
   (setup-event-channels!)
   (setup-event-subscriptions!)
   (setup-gol!)
-  (start-rendering!))
+  (start-rendering!)
+  (start-gol!))
 
 (defn teardown []
   (console/info "teardown")
+  (stop-gol!)
   (stop-rendering!)
   (teardown-gol!)
   (teardown-event-subscriptions!)
