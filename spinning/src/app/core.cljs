@@ -1,18 +1,20 @@
 (ns app.core
   (:require-macros
-   [klang.macros :as macros])
+    [cljs.core.async.macros :refer [go go-loop]]
+    [klang.macros :as macros])
   (:require
-   ;[ankha.core :as ankha]
-   [clairvoyant.core :as trace :include-macros true]
-   [clojure.string :as string]
-   [goog.dom :as dom]
-   [goog.object]
-   ;[ion.omni.core :as omni]
-   [ion.poly.core :as poly]
-   [klang.core :as klang]
-   [shodan.console :as console :include-macros true]
-   [shodan.inspection :refer [inspect]]
-   ))
+    ;[ankha.core :as ankha]
+    [clairvoyant.core :as trace :include-macros true]
+    [cljs.core.async :refer [<! >! chan close! pipe put! sliding-buffer take! timeout]]
+    [clojure.string :as string]
+    [goog.dom :as dom]
+    [goog.object]
+    ;[ion.omni.core :as omni]
+    [ion.poly.core :as poly]
+    [klang.core :as klang]
+    [shodan.console :as console :include-macros true]
+    [shodan.inspection :refer [inspect]]
+    ))
 
 ;(trace/trace-forms {:tracer trace/default-tracer})
 
@@ -51,6 +53,7 @@
           :measure-fps? false
           :render? false
           :update-gol? false
+          :update-soa? false
           }
     :ech {:env-keyboard-key nil
           :env-mouse-click nil
@@ -64,6 +67,10 @@
           }
     :gol {:cells nil
           :generation 0
+          }
+    :soa {:channel nil
+          :max-prime nil
+          :prime-count 0
           }}))
 
 
@@ -147,6 +154,57 @@
 
 
 ;; -----------------------------------------------------------------------------
+;; Sieve of Eratosthenes Prime Number Generator
+
+(defn chan-of-ints [xform start-n]
+  (let [ints (chan 1 xform)]
+    (go-loop [n start-n]
+      (>! ints n)
+      (recur (inc n)))
+    ints))
+
+(defn new-prime? [n knowm-primes]
+  (every? #(not= 0 (mod n %)) knowm-primes))
+
+(defn chan-of-primes []
+  (let [primes (chan)]
+    (go-loop [cur-xf (map identity)
+              cur-ch (chan-of-ints cur-xf 2)
+              knowns [2]]
+      (let [prime  (<! cur-ch)
+            knowns (conj knowns prime)
+            new-xf (filter #(new-prime? % knowns))
+            new-ch (chan-of-ints new-xf prime)]
+        (>! primes prime)
+        (recur new-xf new-ch knowns)))
+    primes))
+
+(defn update-soa! [primes]
+  (swap! state update-in [:soa :prime-count] inc)
+  (take! primes #(swap! state assoc-in [:soa :max-prime] %))
+  (get-in @state [:app :update-soa?]))
+
+(defn start-soa! []
+  (console/info "start soa")
+  (let [primes (chan-of-primes)]
+    (swap! state assoc-in [:app :update-soa?] true)
+    (swap! state assoc-in [:soa :channel] primes)
+    (poly/listen-next-tick! (partial update-soa! primes))))
+
+#_(defn start-soa! []
+  (let [primes (chan-of-primes)]
+    (go-loop []
+      (when-let [next-prime (<! primes)]
+        (swap! state update-in [:soa :prime-count] inc)
+        (swap! state assoc-in [:soa :max-prime] next-prime)
+        (recur)))))
+
+(defn stop-soa! []
+  (console/info "stop soa")
+  (swap! state assoc-in [:app :update-soa?] false))
+
+
+;; -----------------------------------------------------------------------------
 ;; Conway's Game of Life Cellular Automata
 
 (def acorn #{[70 62] [71 60] [71 62] [73 61] [74 62] [75 62] [76 62]})
@@ -173,6 +231,26 @@
                  :when (or (= n 3) (and (= n 2) (contains? cells k)))]
              [k (update-in cell [:age] inc)])))
 
+;; (defn step [cells]
+;;   (let [cell-freq (->> (keys cells) (mapcat neighbors) (frequencies))
+;;         work-chan (chan)
+;;         new-cells {}]
+;;     (go
+;;      (for [[k n] cell-freq]
+;;        :when (or (= n 3) (and (= n 2) (contains? cells k)))
+;;        (>! work-chan [k n])))
+;;     (go
+;;      (into new-cells
+;;            (when-let [[k n] (<! work-chan)]
+;;              (let [cell (or (get cells k) (create-cell k cells))]
+;;                [k (update-in cell [:age] inc)]))))
+;;     new-cells))
+
+;;   (go-loop []
+;;     (when-let [taken (<! channel)]
+;;       (callback taken)
+;;       (recur))))
+
 (defn setup-gol! []
   (swap! state assoc-in [:gol :cells] (create-cells acorn)))
 
@@ -194,53 +272,6 @@
   (swap! state assoc-in [:app :update-gol?] false))
 
 
-
-;; (defn neighbours
-;;   "Given a cell's coordinates, returns the coordinates of its neighbours."
-;;   [[x y]]
-;;   (for [dx [-1 0 1] dy (if (zero? dx) [-1 1] [-1 0 1])]
-;;     [(+ dx x) (+ dy y)]))
-
-;; (defn step
-;;   "Given a set of living cells, computes the new set of living cells."
-;;   [cells]
-;;   (set (for [[cell n] (frequencies (mapcat neighbours cells))
-;;              :when (or (= n 3) (and (= n 2) (cells cell)))]
-;;          cell)))
-
-
-
-;; (defn neighbors [[x y]]
-;;   (for [dx [-1 0 1]
-;;         dy (if (zero? dx) [-1 1] [-1 0 1])]
-;;     [(+ dx x) (+ dy y)]))
-
-;; (defn changed-cells [[x y]]
-;;   (for [dx [-1 0 1]
-;;         dy  [-1 0 1]]
-;;     [(+ dx x) (+ dy y)]))
-
-;; (defn step [state]
-;;   (let [{:keys [cells changed]} state
-;;         changed-neighborhood (set (mapcat changed-cells-memo changed))
-;;         changed-and-alive (s/intersection changed-neighborhood cells)
-;;         changed-cells (frequencies (mapcat neighbors-memo changed-and-alive))
-;;         live-counts (reduce (fn [acc loc] (assoc acc loc 0)) {} changed-and-alive)
-;;         changed-cells (merge live-counts changed-cells)
-;;         state (assoc state :changed #{})]
-;;     (reduce (fn [acc [loc n]]
-;;               (cond (and (cells loc) (or (< n 2) (> n 3)))
-;;                     (-> acc
-;;                         (update-in [:cells] disj loc)
-;;                         (update-in [:changed] conj loc))
-;;                     (and (nil? (cells loc)) (= n 3))
-;;                     (-> acc
-;;                         (update-in [:cells] conj loc)
-;;                         (update-in [:changed] conj loc))
-;;                     :else acc)) state changed-cells)))
-
-
-
 ;; -----------------------------------------------------------------------------
 ;; Render Cycle
 
@@ -253,9 +284,12 @@
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
         mouse-pos (str "M: [" mouse-x ":" mouse-y "]")
-        generation (str "G: " (get-in state [:gol :generation]))
-        population (str "P: " (count (get-in state [:gol :cells])))
-        display [f-count fps generation population]]
+        prime-count (str "P: " (get-in state [:soa :prime-count]))
+        max-prime (str "Max Prime: " (get-in state [:soa :max-prime]))
+        ppf (str "PPF: " (/ (get-in state [:soa :prime-count]) (get-in state [:env :frame-count])))
+        generation (str "Gen: " (get-in state [:gol :generation]))
+        population (str "Pop: " (count (get-in state [:gol :cells])))
+        display [f-count fps prime-count ppf generation population]]
     (set! (.-innerText (app-div)) (string/join ", " display))))
 
 (defn render-cycle! [timestamp]
@@ -282,11 +316,14 @@
   (setup-event-subscriptions!)
   (setup-gol!)
   (start-rendering!)
-  (start-gol!))
+  (start-soa!)
+  ;(start-gol!)
+  )
 
 (defn teardown []
   (console/info "teardown")
   (stop-gol!)
+  (stop-soa!)
   (stop-rendering!)
   (teardown-gol!)
   (teardown-event-subscriptions!)
