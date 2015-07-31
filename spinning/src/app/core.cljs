@@ -5,7 +5,7 @@
   (:require
     ;[ankha.core :as ankha]
     [clairvoyant.core :as trace :include-macros true]
-    [cljs.core.async :refer [<! >! chan close! pipe put! sliding-buffer take! timeout]]
+    [cljs.core.async :refer [<! >! chan close! onto-chan pipe put! sliding-buffer take! timeout]]
     [clojure.string :as string]
     [goog.dom :as dom]
     [goog.object]
@@ -156,27 +156,23 @@
 ;; -----------------------------------------------------------------------------
 ;; Sieve of Eratosthenes Prime Number Generator
 
-(defn chan-of-ints [xform start-n]
-  (let [ints (chan 1 xform)]
-    (go-loop [n start-n]
-      (>! ints n)
-      (recur (inc n)))
-    ints))
-
-(defn new-prime? [n knowm-primes]
-  (every? #(not= 0 (mod n %)) knowm-primes))
+(defn posmod-sift []
+  (fn [rf]
+    (let [seen (volatile! [])]
+      (fn
+        ([] (rf))
+        ([result] (rf result))
+        ([result input]
+         (if (every? #(pos? (mod input %)) @seen)
+           (do (vswap! seen conj input)
+               (rf result input))
+           result))))))
 
 (defn chan-of-primes []
-  (let [primes (chan)]
-    (go-loop [cur-xf (map identity)
-              cur-ch (chan-of-ints cur-xf 2)
-              knowns [2]]
-      (let [prime  (<! cur-ch)
-            knowns (conj knowns prime)
-            new-xf (filter #(new-prime? % knowns))
-            new-ch (chan-of-ints new-xf prime)]
-        (>! primes prime)
-        (recur new-xf new-ch knowns)))
+  (let [inputs (filter odd? (drop 3 (range)))
+        primes (chan 1 (posmod-sift))]
+    (put! primes 2)
+    (onto-chan primes inputs)
     primes))
 
 (defn update-soa! [primes]
@@ -190,14 +186,6 @@
     (swap! state assoc-in [:app :update-soa?] true)
     (swap! state assoc-in [:soa :channel] primes)
     (poly/listen-next-tick! (partial update-soa! primes))))
-
-#_(defn start-soa! []
-  (let [primes (chan-of-primes)]
-    (go-loop []
-      (when-let [next-prime (<! primes)]
-        (swap! state update-in [:soa :prime-count] inc)
-        (swap! state assoc-in [:soa :max-prime] next-prime)
-        (recur)))))
 
 (defn stop-soa! []
   (console/info "stop soa")
@@ -289,7 +277,7 @@
         ppf (str "PPF: " (/ (get-in state [:soa :prime-count]) (get-in state [:env :frame-count])))
         generation (str "Gen: " (get-in state [:gol :generation]))
         population (str "Pop: " (count (get-in state [:gol :cells])))
-        display [f-count fps prime-count ppf generation population]]
+        display [f-count fps prime-count max-prime ppf generation population]]
     (set! (.-innerText (app-div)) (string/join ", " display))))
 
 (defn render-cycle! [timestamp]
