@@ -5,7 +5,7 @@
   (:require
     ;[ankha.core :as ankha]
     [clairvoyant.core :as trace :include-macros true]
-    [cljs.core.async :refer [<! >! chan close! onto-chan pipe put! sliding-buffer take! timeout]]
+    [cljs.core.async :as async :refer [<! >! chan close! onto-chan pipe put! take! timeout]]
     [clojure.string :as string]
     [goog.dom :as dom]
     [goog.object]
@@ -53,7 +53,7 @@
           :measure-fps? false
           :render? false
           :update-gol? false
-          :update-soa? false
+          :update-soe? false
           }
     :ech {:env-keyboard-key nil
           :env-mouse-click nil
@@ -65,10 +65,11 @@
           :mouse-move nil
           :time nil
           }
-    :gol {:cells nil
+    :gol {:busy? false
+          :cells nil
           :generation 0
           }
-    :soa {:channel nil
+    :soe {:channel nil
           :max-prime nil
           :prime-count 0
           }}))
@@ -112,6 +113,7 @@
   (get-in @state [:app :measure-fps?]))
 
 (declare start-gol! stop-gol!)
+(declare start-soe! stop-soe!)
 
 (defn on-env-keyboard-key [m]
   (console/info (:poly/keyword m))
@@ -119,6 +121,8 @@
   (condp = (:poly/keyword m)
     :a :>> #(start-gol!)
     :q :>> #(stop-gol!)
+    :s :>> #(start-soe!)
+    :w :>> #(stop-soe!)
     nil))
 
 (defn on-env-mouse-move [m]
@@ -175,21 +179,37 @@
     (onto-chan primes inputs)
     primes))
 
-(defn update-soa! [primes]
-  (swap! state update-in [:soa :prime-count] inc)
-  (take! primes #(swap! state assoc-in [:soa :max-prime] %))
-  (get-in @state [:app :update-soa?]))
+(defn setup-soe! []
+  (swap! state assoc-in [:soe :channel] (chan-of-primes)))
 
-(defn start-soa! []
-  (console/info "start soa")
-  (let [primes (chan-of-primes)]
-    (swap! state assoc-in [:app :update-soa?] true)
-    (swap! state assoc-in [:soa :channel] primes)
-    (poly/listen-next-tick! (partial update-soa! primes))))
+(defn teardown-soe! []
+  (swap! state assoc-in [:soe :channel] nil))
 
-(defn stop-soa! []
-  (console/info "stop soa")
-  (swap! state assoc-in [:app :update-soa?] false))
+(defn update-soe! [primes-ch]
+  (swap! state update-in [:soe :prime-count] inc)
+  (take! primes-ch #(swap! state assoc-in [:soe :max-prime] %))
+  (get-in @state [:app :update-soe?]))
+
+(defn start-soe! []
+  (console/info "start soe")
+  (swap! state assoc-in [:app :update-soe?] true)
+  (poly/listen-next-tick! (partial update-soe! (get-in @state [:soe :channel]))))
+
+#_(defn start-soe! []
+  (console/info "start soe")
+  (swap! state assoc-in [:app :update-soe?] true)
+  (let [primes-ch (get-in @state [:soe :channel])]
+    (go-loop []
+     (when-let [continue? (get-in @state [:app :update-soe?])]
+       (when-let [next-prime (<! primes-ch)]
+         (swap! state assoc-in [:soe :max-prime] next-prime)
+         (swap! state update-in [:soe :prime-count] inc)
+         (<! (timeout 0))
+         (recur))))))
+
+(defn stop-soe! []
+  (console/info "stop soe")
+  (swap! state assoc-in [:app :update-soe?] false))
 
 
 ;; -----------------------------------------------------------------------------
@@ -204,56 +224,54 @@
 
 (defn create-cell
   ([]
-   {:age 0 :color {:r (rand-int 256) :g (rand-int 256) :b (rand-int 256)}})
-  ([k cells]
-   ; Set newborn cell color using a blend of colors of its 3 living neighbors.
-   (let [[c1 c2 c3] (map #(:color %1) (keep #(get cells %1) (neighbors k)))]
-     {:age 0 :color {:r (:r c1) :g (:g c2) :b (:b c3)}})))
+   (create-cell {:r (rand-int 256) :g (rand-int 256) :b (rand-int 256)}))
+  ([color]
+   {:age 0 :color color}))
 
 (defn create-cells [seed]
   (into {} (for [k seed] [k (create-cell)])))
 
-(defn step [cells]
-  (into {} (for [[k n] (->> (keys cells) (mapcat neighbors) (frequencies))
-                 :let [cell (or (get cells k) (create-cell k cells))]
-                 :when (or (= n 3) (and (= n 2) (contains? cells k)))]
-             [k (update-in cell [:age] inc)])))
+(defn create-color-blend [cells k]
+  "Return a newborn cell color as a blend of colors of its 3 living neighbors."
+  (let [[c1 c2 c3] (map :color (keep #(get cells %1) (neighbors k)))]
+    {:r (:r c1) :g (:g c2) :b (:b c3)}))
 
-;; (defn step [cells]
-;;   (let [cell-freq (->> (keys cells) (mapcat neighbors) (frequencies))
-;;         work-chan (chan)
-;;         new-cells {}]
-;;     (go
-;;      (for [[k n] cell-freq]
-;;        :when (or (= n 3) (and (= n 2) (contains? cells k)))
-;;        (>! work-chan [k n])))
-;;     (go
-;;      (into new-cells
-;;            (when-let [[k n] (<! work-chan)]
-;;              (let [cell (or (get cells k) (create-cell k cells))]
-;;                [k (update-in cell [:age] inc)]))))
-;;     new-cells))
+(defn cell-fate [cells [k n]]
+  (when (or (= n 3) (and (= n 2) (contains? cells k)))
+    (let [cell (or (get cells k)
+                   (create-cell (create-color-blend cells k)))]
+      [k (update-in cell [:age] inc)])))
 
-;;   (go-loop []
-;;     (when-let [taken (<! channel)]
-;;       (callback taken)
-;;       (recur))))
+(defn step-chan [cells]
+  "Returns a channel containing a single map of the next generation of cells."
+  (let [cell-freq  (->> (keys cells) (mapcat neighbors) (frequencies))
+        generation (chan 1 (keep (partial cell-fate cells)))]
+    (go
+      (<! (timeout 0))
+      (onto-chan generation cell-freq)
+      (<! (timeout 0))
+      (<! (async/into {} generation)))))
 
 (defn setup-gol! []
   (swap! state assoc-in [:gol :cells] (create-cells acorn)))
 
 (defn teardown-gol! []
+  (swap! state assoc-in [:gol :busy?] false)
   (swap! state assoc-in [:gol :cells] nil))
 
-(defn update-gol! []
-  (swap! state update-in [:gol :cells] step)
+(defn swap-gol! [cells]
+  (swap! state assoc-in [:gol :cells] cells)
   (swap! state update-in [:gol :generation] inc)
-  (get-in @state [:app :update-gol?]))
+  (swap! state assoc-in [:gol :busy?] false))
+
+(defn update-gol! []
+  (when-not (get-in @state [:gol :busy?])
+    (swap! state assoc-in [:gol :busy?] true)
+    (take! (step-chan (get-in @state [:gol :cells])) swap-gol!)))
 
 (defn start-gol! []
   (console/info "start gol")
-  (swap! state assoc-in [:app :update-gol?] true)
-  (poly/listen-next-tick! update-gol!))
+  (swap! state assoc-in [:app :update-gol?] true))
 
 (defn stop-gol! []
   (console/info "stop gol")
@@ -262,6 +280,9 @@
 
 ;; -----------------------------------------------------------------------------
 ;; Render Cycle
+
+(defn update! []
+  (when (get-in @state [:app :update-gol?]) (update-gol!)))
 
 (defn render! [timestamp state]
   (let [app-name (get-in state [:app :name])
@@ -272,22 +293,23 @@
         mouse-x (:client-x mouse-move)
         mouse-y (:client-y mouse-move)
         mouse-pos (str "M: [" mouse-x ":" mouse-y "]")
-        prime-count (str "P: " (get-in state [:soa :prime-count]))
-        max-prime (str "Max Prime: " (get-in state [:soa :max-prime]))
-        ppf (str "PPF: " (/ (get-in state [:soa :prime-count]) (get-in state [:env :frame-count])))
+        prime-count (str "Primes: " (get-in state [:soe :prime-count]))
+        max-prime (str "Max Prime: " (get-in state [:soe :max-prime]))
+        ppf (str "PPF: " (/ (get-in state [:soe :prime-count]) (get-in state [:env :frame-count])))
         generation (str "Gen: " (get-in state [:gol :generation]))
         population (str "Pop: " (count (get-in state [:gol :cells])))
-        display [f-count fps prime-count max-prime ppf generation population]]
+        display [f-count fps generation population prime-count max-prime]]
     (set! (.-innerText (app-div)) (string/join ", " display))))
 
-(defn render-cycle! [timestamp]
+(defn animate! [timestamp]
+  (update!)
   (render! timestamp @state)
   (get-in @state [:app :rendering?]))
 
 (defn start-rendering! []
   (console/info "start rendering")
   (swap! state assoc-in [:app :rendering?] true)
-  (poly/listen-animation-frame! render-cycle!))
+  (poly/listen-animation-frame! animate!))
 
 (defn stop-rendering! []
   (console/info "stop rendering")
@@ -303,16 +325,18 @@
   (setup-event-channels!)
   (setup-event-subscriptions!)
   (setup-gol!)
+  (setup-soe!)
   (start-rendering!)
-  (start-soa!)
-  ;(start-gol!)
+  (start-soe!)
+  (start-gol!)
   )
 
 (defn teardown []
   (console/info "teardown")
   (stop-gol!)
-  (stop-soa!)
+  (stop-soe!)
   (stop-rendering!)
+  (teardown-soe!)
   (teardown-gol!)
   (teardown-event-subscriptions!)
   (teardown-event-channels!))
