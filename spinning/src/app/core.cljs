@@ -183,7 +183,9 @@
   (swap! state assoc-in [:soe :channel] (chan-of-primes)))
 
 (defn teardown-soe! []
-  (swap! state assoc-in [:soe :channel] nil))
+  (swap! state assoc-in [:soe :channel] nil)
+  (swap! state assoc-in [:soe :max-prime] nil)
+  (swap! state assoc-in [:soe :prime-count] 0))
 
 (defn update-soe! [primes-ch]
   (swap! state update-in [:soe :prime-count] inc)
@@ -222,6 +224,9 @@
        ((juxt inc      inc identity dec dec      dec identity inc) x)
        ((juxt identity inc inc      inc identity dec dec      dec) y)))
 
+(defn living-neighbors [cells k]
+  (keep #(get cells %1) (neighbors k)))
+
 (defn create-cell
   ([]
    (create-cell {:r (rand-int 256) :g (rand-int 256) :b (rand-int 256)}))
@@ -231,16 +236,19 @@
 (defn create-cells [seed]
   (into {} (for [k seed] [k (create-cell)])))
 
-(defn create-color-blend [cells k]
-  "Return a newborn cell color as a blend of colors of its 3 living neighbors."
-  (let [[c1 c2 c3] (map :color (keep #(get cells %1) (neighbors k)))]
-    {:r (:r c1) :g (:g c2) :b (:b c3)}))
+(defn color-blend [c1 c2 c3]
+  {:r (:r c1) :g (:g c2) :b (:b c3)})
+
+(defn newborn [cells k]
+  "Return a newborn cell with a blend of colors of its 3 living neighbors."
+  (create-cell (apply color-blend (map :color (living-neighbors cells k)))))
 
 (defn cell-fate [cells [k n]]
+  "Determine if a cell will be part of the next generation."
   (when (or (= n 3) (and (= n 2) (contains? cells k)))
-    (let [cell (or (get cells k)
-                   (create-cell (create-color-blend cells k)))]
-      [k (update-in cell [:age] inc)])))
+    (let [cell (or (get cells k) (newborn cells k))
+          cell (update-in cell [:age] inc)]
+      [k cell])))
 
 (defn step-chan [cells]
   "Returns a channel containing a single map of the next generation of cells."
@@ -257,7 +265,8 @@
 
 (defn teardown-gol! []
   (swap! state assoc-in [:gol :busy?] false)
-  (swap! state assoc-in [:gol :cells] nil))
+  (swap! state assoc-in [:gol :cells] nil)
+  (swap! state assoc-in [:gol :generation] 0))
 
 (defn swap-gol! [cells]
   (swap! state assoc-in [:gol :cells] cells)
@@ -327,7 +336,7 @@
   (setup-gol!)
   (setup-soe!)
   (start-rendering!)
-  (start-soe!)
+;  (start-soe!)
   (start-gol!)
   )
 
