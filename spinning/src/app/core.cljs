@@ -252,13 +252,15 @@
 
 (defn step-chan [cells]
   "Returns a channel containing a single map of the next generation of cells."
-  (let [cell-freq  (->> (keys cells) (mapcat neighbors) (frequencies))
-        generation (chan 1 (keep (partial cell-fate cells)))]
+  (let [generation   (chan 1 (keep (partial cell-fate cells)))
+        neighborhood (mapcat neighbors (keys cells))]
     (go
       (<! (timeout 0))
-      (onto-chan generation cell-freq)
-      (<! (timeout 0))
-      (<! (async/into {} generation)))))
+      (let [cell-neighbor-freq (frequencies neighborhood)]
+        (<! (timeout 0))
+        (onto-chan generation cell-neighbor-freq)
+        (<! (timeout 0))
+        (<! (async/into {} generation))))))
 
 (defn setup-gol! []
   (swap! state assoc-in [:gol :cells] (create-cells acorn)))
