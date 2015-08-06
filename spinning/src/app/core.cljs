@@ -41,6 +41,8 @@
 
 (defn app-canvas [] (poly/get-element :app-canvas))
 
+(defn app-context [] (-> (app-canvas) (.getContext "2d")))
+
 
 ;; -----------------------------------------------------------------------------
 ;; State
@@ -295,7 +297,17 @@
 (defn update! []
   (when (get-in @state [:app :update-gol?]) (update-gol!)))
 
-(defn render! [timestamp state]
+(defn render-cells! [context state]
+  (let [cell-size 5]
+    (set! (.-fillStyle context) "#efefef")
+    (.fillRect context 0 0 1000 1000)
+    (doseq [[[x y] cell] (get-in state [:gol :cells])
+            :let [color (:color cell)
+                  rgb (str "rgb(" (:r color) "," (:g color) "," (:b color) ")")]]
+      (set! (.-fillStyle context) rgb)
+      (.fillRect context (* cell-size x) (* cell-size y) cell-size cell-size))))
+
+(defn render-text! [timestamp state]
   (let [app-name (get-in state [:app :name])
         env-time (get-in state [:env :time])
         f-count (str "F: " (get-in state [:env :frame-count]))
@@ -311,6 +323,10 @@
         population (str "Pop: " (count (get-in state [:gol :cells])))
         display [f-count fps generation population prime-count max-prime]]
     (set! (.-innerText (app-div)) (string/join ", " display))))
+
+(defn render! [timestamp state]
+  (render-text! timestamp state)
+  (render-cells! (app-context) state))
 
 (defn animate! [timestamp]
   (update!)
@@ -361,8 +377,8 @@
   (console/info "on-init")
   (let [canvas (dom/createElement "canvas")]
     (goog.object/set canvas "id" "app-canvas")
-    (goog.object/set canvas "width" 800)
-    (goog.object/set canvas "height" 800)
+    (goog.object/set canvas "width" 1000)
+    (goog.object/set canvas "height" 1000)
     (dom/appendChild (poly/get-body) canvas))
   (setup)
   ;(inspect @state)
