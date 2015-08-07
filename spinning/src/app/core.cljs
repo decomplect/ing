@@ -259,18 +259,21 @@
 
 (defn step-chan [cells]
   "Returns a channel containing a single map of the next generation of cells."
-  (console/time-start "Build Neighborhood")
-  (let [generation   (chan 1 (keep (partial cell-fate cells)))
-        neighborhood (mapcat neighbors (keys cells))]
-    (console/time-end "Build Neighborhood")
-    (go
+  (go
+    (console/time-start "neighborhood")
+    (let [generation (chan 1 (keep (partial cell-fate cells)))
+          neighborhood (mapcat neighbors (keys cells))]
+      (console/time-end "neighborhood")
       (console/time-start "cell-neighbor-freq")
       (let [cell-neighbor-freq (frequencies neighborhood)]
         (console/time-end "cell-neighbor-freq")
+        ;(<! (timeout 0))
         (<! (yield))
-        ;(<! (timeout 0))
+        (console/time-start "onto-chan generation")
         (onto-chan generation cell-neighbor-freq)
+        (console/time-end "onto-chan generation")
         ;(<! (timeout 0))
+        (<! (yield))
         (<! (async/into {} generation))))))
 
 (defn setup-gol! []
