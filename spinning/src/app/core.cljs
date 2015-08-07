@@ -7,14 +7,14 @@
     [clairvoyant.core :as trace :include-macros true]
     [cljs.core.async :as async :refer [<! >! chan close! onto-chan pipe put! take! timeout]]
     [clojure.string :as string]
+    [goog.async.nextTick]
     [goog.dom :as dom]
     [goog.object]
     ;[ion.omni.core :as omni]
     [ion.poly.core :as poly]
     [klang.core :as klang]
     [shodan.console :as console :include-macros true]
-    [shodan.inspection :refer [inspect]]
-    ))
+    [shodan.inspection :refer [inspect]]))
 
 ;(trace/trace-forms {:tracer trace/default-tracer})
 
@@ -252,16 +252,25 @@
           cell (update-in cell [:age] inc)]
       [k cell])))
 
+(defn yield []
+  (let [ch (chan)]
+    (goog.async.nextTick #(close! ch))
+    ch))
+
 (defn step-chan [cells]
   "Returns a channel containing a single map of the next generation of cells."
+  (console/time-start "Build Neighborhood")
   (let [generation   (chan 1 (keep (partial cell-fate cells)))
         neighborhood (mapcat neighbors (keys cells))]
+    (console/time-end "Build Neighborhood")
     (go
-      (<! (timeout 0))
+      (console/time-start "cell-neighbor-freq")
       (let [cell-neighbor-freq (frequencies neighborhood)]
-        (<! (timeout 0))
+        (console/time-end "cell-neighbor-freq")
+        (<! (yield))
+        ;(<! (timeout 0))
         (onto-chan generation cell-neighbor-freq)
-        (<! (timeout 0))
+        ;(<! (timeout 0))
         (<! (async/into {} generation))))))
 
 (defn setup-gol! []
@@ -273,12 +282,14 @@
   (swap! state assoc-in [:gol :generation] 0))
 
 (defn swap-gol! [cells]
+  (console/time-end (str "Generation " (get-in @state [:gol :generation])))
   (swap! state assoc-in [:gol :cells] cells)
   (swap! state update-in [:gol :generation] inc)
   (swap! state assoc-in [:gol :busy?] false))
 
 (defn update-gol! []
   (when-not (get-in @state [:gol :busy?])
+    (console/time-start (str "Generation " (get-in @state [:gol :generation])))
     (swap! state assoc-in [:gol :busy?] true)
     (take! (step-chan (get-in @state [:gol :cells])) swap-gol!)))
 
