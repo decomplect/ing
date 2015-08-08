@@ -261,20 +261,16 @@
   "Returns a channel containing a single map of the next generation of cells."
   (go
     (console/time-start "neighborhood")
-    (let [generation (chan 1 (keep (partial cell-fate cells)))
-          neighborhood (mapcat neighbors (keys cells))]
+    (let [neighborhood  (mapcat neighbors (keys cells))
+          neighbor-freq (frequencies neighborhood)]
       (console/time-end "neighborhood")
-      (console/time-start "cell-neighbor-freq")
-      (let [cell-neighbor-freq (frequencies neighborhood)]
-        (console/time-end "cell-neighbor-freq")
-        ;(<! (timeout 0))
-        (<! (yield))
-        (console/time-start "onto-chan generation")
-        (onto-chan generation cell-neighbor-freq)
-        (console/time-end "onto-chan generation")
-        ;(<! (timeout 0))
-        (<! (yield))
-        (<! (async/into {} generation))))))
+      (<! (yield))
+      (console/time-start "generation-ch")
+      (let [generation-ch (chan 1 (keep (partial cell-fate cells)))]
+        (onto-chan generation-ch neighbor-freq)
+        (let [new-cells (<! (async/into {} generation-ch))]
+          (console/time-end "generation-ch")
+          new-cells)))))
 
 (defn setup-gol! []
   (swap! state assoc-in [:gol :cells] (create-cells acorn)))
@@ -285,14 +281,14 @@
   (swap! state assoc-in [:gol :generation] 0))
 
 (defn swap-gol! [cells]
-  (console/time-end (str "Generation " (get-in @state [:gol :generation])))
+  (console/time-end (str "Generation " (inc (get-in @state [:gol :generation]))))
   (swap! state assoc-in [:gol :cells] cells)
   (swap! state update-in [:gol :generation] inc)
   (swap! state assoc-in [:gol :busy?] false))
 
 (defn update-gol! []
   (when-not (get-in @state [:gol :busy?])
-    (console/time-start (str "Generation " (get-in @state [:gol :generation])))
+    (console/time-start (str "Generation " (inc (get-in @state [:gol :generation]))))
     (swap! state assoc-in [:gol :busy?] true)
     (take! (step-chan (get-in @state [:gol :cells])) swap-gol!)))
 
@@ -343,8 +339,14 @@
   (render-cells! (app-context) state))
 
 (defn animate! [timestamp]
+  (when (= 0 (get-in @state [:gol :generation]))
+    (console/time-start "gen-100"))
   (update!)
   (render! timestamp @state)
+  (when (= 100 (get-in @state [:gol :generation]))
+    (stop-gol!)
+    (console/time-end "gen-100")
+    (console/info (str "Frame " (get-in @state [:env :frame-count]))))
   (get-in @state [:app :rendering?]))
 
 (defn start-rendering! []
