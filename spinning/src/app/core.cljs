@@ -260,17 +260,23 @@
 (defn step-chan [cells]
   "Returns a channel containing a single map of the next generation of cells."
   (go
-    (console/time-start "neighborhood")
-    (let [neighborhood  (mapcat neighbors (keys cells))
-          neighbor-freq (frequencies neighborhood)]
-      (console/time-end "neighborhood")
+    (console/time-start "neighbor-freq")
+    (let [neighbor-freq (->> (keys cells) (mapcat neighbors) (frequencies))]
+      (console/time-end "neighbor-freq")
       (<! (yield))
       (console/time-start "generation-ch")
-      (let [generation-ch (chan 1 (keep (partial cell-fate cells)))]
-        (onto-chan generation-ch neighbor-freq)
-        (let [new-cells (<! (async/into {} generation-ch))]
-          (console/time-end "generation-ch")
-          new-cells)))))
+      ;(let [generation-ch (chan 1 (keep (partial cell-fate cells)))]
+      ;    (onto-chan generation-ch neighbor-freq)
+      ;    (let [new-cells (<! (async/into {} generation-ch))]
+      ;      (console/time-end "generation-ch")
+      ;      new-cells))
+      (let [new-cells (into {} (for [[k n] neighbor-freq
+                                     :when (or (= n 3) (and (= n 2) (contains? cells k)))
+                                     :let [cell (or (get cells k) (newborn cells k))
+                                           cell (update-in cell [:age] inc)]]
+                                 [k cell]))]
+        (console/time-end "generation-ch")
+        new-cells))))
 
 (defn setup-gol! []
   (swap! state assoc-in [:gol :cells] (create-cells acorn)))
@@ -356,7 +362,8 @@
 
 (defn stop-rendering! []
   (console/info "stop rendering")
-  (swap! state assoc-in [:app :rendering?] false))
+  (swap! state assoc-in [:app :rendering?] false)
+  (js/setTimeout identity 0))
 
 
 ;; -----------------------------------------------------------------------------

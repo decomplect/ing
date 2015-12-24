@@ -12,7 +12,6 @@
    [garden.color :as color :refer [hsl rgb]]
    [garden.core :refer [css]]
    [garden.units :as u :refer [em pt px]]
-   [goog]
    [goog.userAgent]
    [ion.cuss.core :as cuss]
    [ion.poly.core :as poly]
